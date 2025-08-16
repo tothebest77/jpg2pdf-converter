@@ -1,12 +1,9 @@
-<!-- 파일명 예: img2pdf-iframe.html -->
 <!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>이미지 → PDF 변환기 (iframe)</title>
-<link rel="preconnect" href="https://cdnjs.cloudflare.com" />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+<title>이미지 → PDF 변환기 (로컬/iframe 겸용)</title>
 <style>
   :root { --gap:8px; --r:12px; }
   *{box-sizing:border-box}
@@ -18,20 +15,23 @@
   .row{display:flex;flex-wrap:wrap;gap:var(--gap)}
   .drop{flex:1;border:2px dashed #cbd5e1;border-radius:var(--r);padding:12px;text-align:center;background:#fbfcfd}
   .drop.drag{border-color:#4a8;background:#f0fff8}
-  .btn{padding:8px 12px;border:1px solid #d0d7de;border-radius:10px;background:#fff;cursor:pointer}
-  .btn.primary{background:#111;color:#fff;border-color:#111}
+  .btn{padding:8px 12px;border:1px solid #d0d7de;border-radius:10px;background:#fff;cursor:pointer;transition:transform .02s ease}
   .btn:active{transform:translateY(1px)}
+  .btn.primary{background:#111;color:#fff;border-color:#111}
+  .btn[disabled]{opacity:.6; cursor:not-allowed}
   .sr{position:absolute;width:1px;height:1px;clip:rect(0 0 0 0);overflow:hidden}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:var(--gap);margin-top:10px}
   .item{border:1px solid #e6e9ee;border-radius:10px;overflow:hidden;background:#fff}
   .ph{width:100%;aspect-ratio:4/3;object-fit:cover;background:#f3f4f6}
-  .meta{display:flex;gap:6px;padding:8px}
-  .mini .btn{padding:6px;font-size:12px}
+  .meta{display:flex;gap:6px;align-items:center;padding:8px}
+  .name{font-size:12px; word-break:break-all}
   .mini{display:flex;gap:6px;margin-left:auto}
+  .mini .btn{padding:6px;font-size:12px}
   .ctl{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--gap);margin-top:10px}
   select,input[type="number"]{width:100%;padding:8px;border:1px solid #dde1e6;border-radius:10px;background:#fff}
   .note{font-size:12px;color:#666}
   .footer{display:flex;gap:var(--gap);flex-wrap:wrap;align-items:center;margin-top:10px}
+  .status{font-size:12px;color:#555;margin-top:8px}
 </style>
 </head>
 <body>
@@ -46,7 +46,7 @@
           <label class="btn" for="files">파일 선택</label>
           <input id="files" class="sr" type="file" accept="image/png,image/jpeg" multiple />
           <button id="clear" class="btn" type="button">초기화</button>
-          <p class="note" style="margin-top:6px">* 이미지가 많거나 해상도가 큰 경우 생성 시간이 길어질 수 있어요.</p>
+          <div id="engineStatus" class="status">PDF 엔진 로드 중…</div>
         </div>
       </div>
 
@@ -71,8 +71,8 @@
         </label>
         <label>맞춤
           <select id="fit">
-            <option value="contain">비율 유지</option>
-            <option value="cover">페이지 채우기</option>
+            <option value="contain">비율 유지(여백)</option>
+            <option value="cover">페이지 채우기(잘릴 수 있음)</option>
             <option value="original">원본 크기</option>
           </select>
         </label>
@@ -89,21 +89,66 @@
       <div id="list" class="grid" aria-live="polite"></div>
 
       <div class="footer">
-        <button id="make" class="btn primary" type="button">PDF 만들기</button>
-        <button id="sort" class="btn" type="button">파일명 정렬</button>
-        <span class="note">모바일에서 다운로드 막힐 때는 “새 탭 열기”를 체크하세요.</span>
+        <button id="make" class="btn primary" type="button" disabled>PDF 만들기</button>
+        <button id="sort" class="btn" type="button" disabled>파일명 정렬</button>
+        <span class="note">* 이미지가 많거나 해상도가 큰 경우 생성 시간/메모리 사용이 커질 수 있어요.</span>
       </div>
     </div>
   </div>
 
+<!-- ===== jsPDF 동적 로더: CDN → 폴백 → (선택) 로컬 ===== -->
+<script>
+(function loadJsPDF(){
+  const statusEl = document.getElementById('engineStatus');
+  const makeBtn = document.getElementById('make');
+  const sortBtn = document.getElementById('sort');
+
+  function ready(){
+    if (window.jspdf && window.jspdf.jsPDF) {
+      statusEl.textContent = 'PDF 엔진 준비 완료.';
+      makeBtn.disabled = false;
+      sortBtn.disabled = false;
+      return true;
+    }
+    return false;
+  }
+  function inject(src, onok, onfail){
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = onok;
+    s.onerror = onfail;
+    document.head.appendChild(s);
+  }
+
+  // 1차: cdnjs
+  inject(
+    "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js",
+    () => { if (!ready()) statusEl.textContent = '엔진 로드 오류'; },
+    () => {
+      statusEl.textContent = "기본 CDN 실패 → 대체 CDN 시도 중…";
+      // 2차: jsDelivr
+      inject(
+        "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js",
+        () => { if (!ready()) statusEl.textContent = '엔진 로드 오류'; },
+        () => {
+          statusEl.textContent = "CDN 로드 실패. 네트워크/차단을 확인하세요.";
+          // 3차(선택): 로컬 파일을 같은 폴더에 둘 경우 아래 한 줄을 주석 해제하세요.
+          // inject("./jspdf.umd.min.js", () => { if (!ready()) statusEl.textContent='엔진 로드 오류'; }, () => { statusEl.textContent='로컬 로드 실패'; });
+        }
+      );
+    }
+  );
+})();
+</script>
+
+<!-- ===== 앱 로직 ===== -->
 <script>
 (function(){
-  const { jsPDF } = window.jspdf || {};
   const $ = s => document.querySelector(s);
   const drop = $('#drop'), fi = $('#files'), list = $('#list');
-  const size = $('#size'), ori = $('#ori'), margin = $('#margin');
-  const fit = $('#fit'), flatten = $('#flatten'), openNew = $('#open');
-  const make = $('#make'), sort = $('#sort'), clear = $('#clear');
+  const size = $('#size'), ori = $('#ori'), margin = $('#margin'), fit = $('#fit');
+  const flatten = $('#flatten'), openNew = $('#open');
+  const make = $('#make'), sort = $('#sort'), clearBtn = $('#clear');
 
   let items = []; // {file,name,url,type}
 
@@ -116,74 +161,134 @@
   function render(){
     list.innerHTML = '';
     items.forEach((it,i)=>{
-      const div = document.createElement('div'); div.className='item';
-      const img = document.createElement('img'); img.className='ph'; img.src=it.url; img.alt=it.name;
-      const meta = document.createElement('div'); meta.className='meta';
-      const name = document.createElement('div'); name.style.fontSize='12px'; name.style.wordBreak='break-all'; name.textContent = it.name;
-      const mini = document.createElement('div'); mini.className='mini';
-      mini.append(btn('↑',()=>move(i,-1)), btn('↓',()=>move(i,1)), btn('삭제',()=>del(i)));
-      meta.append(name,mini); div.append(img,meta); list.append(div);
+      const d=document.createElement('div'); d.className='item';
+      const img=document.createElement('img'); img.className='ph'; img.src=it.url; img.alt=it.name;
+      const m=document.createElement('div'); m.className='meta';
+      const nm=document.createElement('div'); nm.className='name'; nm.textContent=it.name;
+      const mm=document.createElement('div'); mm.className='mini';
+      mm.append(btn('↑',()=>mv(i,-1)), btn('↓',()=>mv(i,1)), btn('삭제',()=>del(i)));
+      m.append(nm,mm); d.append(img,m); list.append(d);
     });
   }
   function btn(t,fn){ const b=document.createElement('button'); b.className='btn'; b.type='button'; b.textContent=t; b.onclick=fn; return b; }
-  function move(i,d){ const j=i+d; if(j<0||j>=items.length) return; [items[i],items[j]]=[items[j],items[i]]; render(); }
+  function mv(i,d){ const j=i+d; if(j<0||j>=items.length) return; [items[i],items[j]]=[items[j],items[i]]; render(); }
   function del(i){ URL.revokeObjectURL(items[i].url); items.splice(i,1); render(); }
   function reset(){ items.forEach(it=>URL.revokeObjectURL(it.url)); items=[]; render(); }
+  if (clearBtn) clearBtn.addEventListener('click', reset);
 
+  // 드래그&드롭
   drop.addEventListener('dragover',e=>{e.preventDefault(); drop.classList.add('drag');});
   drop.addEventListener('dragleave',()=>drop.classList.remove('drag'));
   drop.addEventListener('drop',e=>{e.preventDefault(); drop.classList.remove('drag'); add(e.dataTransfer.files);});
+
+  // 파일 선택
   fi.addEventListener('change',e=>add(e.target.files));
-  clear.addEventListener('click',reset);
-  sort.addEventListener('click',()=>{ items.sort((a,b)=>a.name.localeCompare(b.name,'ko',{numeric:true,sensitivity:'base'})); render(); });
 
+  // 파일명 정렬
+  sort.addEventListener('click',()=>{
+    items.sort((a,b)=>a.name.localeCompare(b.name,'ko',{numeric:true,sensitivity:'base'}));
+    render();
+  });
+
+  // PDF 만들기
   make.addEventListener('click', async ()=>{
-    if(!window.jspdf||!jsPDF){ alert('PDF 엔진이 아직 로드되지 않았어요. 잠시 후 다시 시도해 주세요.'); return; }
-    if(!items.length){ alert('이미지를 먼저 추가해 주세요.'); return; }
+    // 로드 확인
+    if (!window.jspdf || !window.jspdf.jsPDF) {
+      alert("PDF 엔진이 아직 준비되지 않았어요. 잠시 후 다시 시도해 주세요.");
+      return;
+    }
+    if (!items.length) {
+      alert('이미지를 먼저 추가해 주세요.');
+      return;
+    }
 
-    const doc = new jsPDF({orientation:ori.value, unit:'mm', format:size.value, compress:true});
+    const { jsPDF } = window.jspdf;
+    const orientation = ori.value;
+    const format = size.value;
+    const doc = new jsPDF({ orientation, unit:'mm', format, compress:true });
+
     try{
       for(let i=0;i<items.length;i++){
         if(i>0) doc.addPage();
         const data = await toDataURL(items[i].file, flatten.checked);
         const img = await loadImg(data);
-        const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
         const m = Math.max(0, Number(margin.value)||0);
-        const boxW = Math.max(0, pageW-2*m), boxH = Math.max(0, pageH-2*m);
-        const iw = img.naturalWidth||img.width, ih = img.naturalHeight||img.height;
+        const boxW = Math.max(0, pageW - 2*m);
+        const boxH = Math.max(0, pageH - 2*m);
+
+        const iw = img.naturalWidth || img.width;
+        const ih = img.naturalHeight || img.height;
         let w, h;
-        if(fit.value==='original'){ w = iw*0.264583; h = ih*0.264583; }
-        else{
-          const br = boxW/boxH, ir = iw/ih;
-          if(fit.value==='contain'){ if(ir>br){ w=boxW; h=w/ir; } else { h=boxH; w=h*ir; } }
-          else{ // cover
-            if(ir>br){ h=boxH; w=h*ir; } else { w=boxW; h=w/ir; }
+
+        if (fit.value === 'original') {
+          // 1px ≈ 0.264583mm
+          w = iw * 0.264583; h = ih * 0.264583;
+        } else {
+          const br = boxW / boxH, ir = iw / ih;
+          if (fit.value === 'contain') {
+            if (ir > br) { w = boxW; h = w/ir; }
+            else { h = boxH; w = h*ir; }
+          } else { // cover
+            if (ir > br) { h = boxH; w = h*ir; }
+            else { w = boxW; h = w/ir; }
           }
         }
-        let x=(pageW-w)/2, y=(pageH-h)/2;
-        if(fit.value!=='original'){ x=Math.max(m,x); y=Math.max(m,y); }
+
+        let x = (pageW - w) / 2, y = (pageH - h) / 2;
+        if (fit.value !== 'original') { x = Math.max(m, x); y = Math.max(m, y); }
+
         const type = data.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         doc.addImage(data, type, x, y, w, h);
       }
-      if(openNew.checked){ const url = doc.output('bloburl'); window.open(url, '_blank'); }
-      else{ doc.save('images.pdf'); }
-    }catch(e){ console.error(e); alert('PDF 생성 중 오류가 발생했어요. 해상도/개수를 줄여 다시 시도해 주세요.'); }
+
+      if (openNew.checked) {
+        const url = doc.output('bloburl');
+        // 팝업 차단 방지를 위해 사용자 클릭 이벤트 내에서 호출
+        window.open(url, '_blank');
+      } else {
+        doc.save('images.pdf');
+      }
+    }catch(e){
+      console.error(e);
+      alert('PDF 생성 중 오류가 발생했어요. 이미지 해상도/개수를 줄여 다시 시도해 주세요.');
+    }
   });
 
+  // ── 유틸 ───────────────────────────────────────────
   async function toDataURL(file, whiteBgForPng){
     const data = await read(file);
-    if(!whiteBgForPng || !/^image\/png$/i.test(file.type)) return data;
+    if (!whiteBgForPng || !/^image\/png$/i.test(file.type)) return data;
+
     const img = await loadImg(data);
-    const w = img.naturalWidth||img.width, h = img.naturalHeight||img.height;
-    const MAX = 24_000_000; let cw=w, ch=h; const px=w*h;
-    if(px>MAX){ const s=Math.sqrt(MAX/px); cw=Math.max(1, (w*s)|0); ch=Math.max(1, (h*s)|0); }
-    const c=document.createElement('canvas'); c.width=cw; c.height=ch;
-    const g=c.getContext('2d'); g.fillStyle='#fff'; g.fillRect(0,0,cw,ch);
-    if(cw!==w||ch!==h) g.drawImage(img,0,0,w,h,0,0,cw,ch); else g.drawImage(img,0,0);
-    return c.toDataURL('image/jpeg', .92);
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+
+    // 메모리 보호: 24MP 제한
+    const MAX = 24_000_000;
+    let cw = w, ch = h, px = w*h;
+    if (px > MAX) {
+      const s = Math.sqrt(MAX/px);
+      cw = Math.max(1, (w*s)|0);
+      ch = Math.max(1, (h*s)|0);
+    }
+
+    const c = document.createElement('canvas');
+    c.width = cw; c.height = ch;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.fillRect(0,0,cw,ch);
+    if (cw !== w || ch !== h) g.drawImage(img, 0,0,w,h, 0,0,cw,ch);
+    else g.drawImage(img, 0,0);
+
+    // PNG 투명 → 흰색 합성 후 JPEG로 저장
+    return c.toDataURL('image/jpeg', 0.92);
   }
   function read(f){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=e=>res(e.target.result); r.onerror=rej; r.readAsDataURL(f); }); }
   function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.crossOrigin='anonymous'; i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
+
 })();
 </script>
 </body>
