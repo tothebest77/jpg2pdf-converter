@@ -1,0 +1,71 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JPG to PDF Converter</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f8f9fa;
+    }
+    .jpg2pdf-widget {
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+      border-radius: 10px;
+    }
+    .jpg2pdf-widget input, .jpg2pdf-widget button {
+      display: block;
+      width: 100%;
+      margin-top: 10px;
+      font-size: 16px;
+      padding: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h2 style="text-align:center;">JPG to PDF Converter</h2>
+  <div class="jpg2pdf-widget">
+    <input type="file" id="imageFiles" accept=".jpg,.jpeg,.png,.gif" multiple />
+    <button onclick="convertToPDF()">Convert to PDF</button>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script>
+    async function convertToPDF() {
+      const { jsPDF } = window.jspdf;
+      const input = document.getElementById('imageFiles');
+      const files = Array.from(input.files);
+      if (files.length === 0) return alert('Please select images.');
+
+      const pdf = new jsPDF();
+      for (let i = 0; i < files.length; i++) {
+        const imgData = await readImageAsDataURL(files[i]);
+        const img = new Image();
+        img.src = imgData;
+        await img.decode();
+
+        const width = pdf.internal.pageSize.getWidth();
+        const height = (img.height / img.width) * width;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(img, 'JPEG', 0, 0, width, height);
+      }
+      pdf.save('converted.pdf');
+    }
+
+    function readImageAsDataURL(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = error => reject(error);
+        reader.readAsDataURL(file);
+      });
+    }
+  </script>
+</body>
+</html>
